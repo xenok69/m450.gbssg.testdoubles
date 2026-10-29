@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace TestDoublesExercise;
 
 public sealed record Reservation(string CustomerEmail, string EventCode, int SeatCount);
@@ -65,5 +67,21 @@ public sealed class ReservationService
 
         _sender.Send(reservation);
         return true;
+    }
+    
+    public bool ReserveBatch(IReadOnlyList<Reservation> entries)
+    {
+        List<bool> allResults = new();
+        
+        foreach (var entry in entries)
+        {
+            allResults.Add(Reserve(entry.CustomerEmail, entry.EventCode, entry.SeatCount));
+        }
+        
+        ArgumentNullException.ThrowIfNull(entries);
+        ArgumentNullException.ThrowIfNull(allResults);
+        
+        bool result = allResults.All(r => r);
+        return result;
     }
 }

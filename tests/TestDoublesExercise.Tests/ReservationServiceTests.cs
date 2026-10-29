@@ -4,6 +4,49 @@ namespace TestDoublesExercise.Tests;
 
 public sealed class ReservationServiceTests
 {
+    //> ------------------------- <//
+    //>     HELPER FUNCTIONS      <//
+    //> ------------------------- <//
+    
+    private sealed class Stub(IReadOnlyDictionary<string, int> availableSeatsByEventCode) : ISeatAvailability
+    {
+        public Stub(string eventCode, int availableSeats)
+            : this( new Dictionary<string, int> { [eventCode] = availableSeats } )
+        {
+        }
+        
+        public int CallCount { get; private set; }
+
+        public int GetAvailableSeats(string eventCode)
+        {
+            CallCount++;
+            return availableSeatsByEventCode.GetValueOrDefault(eventCode, 0);
+        }
+    }
+
+    private sealed class Repository(bool trySaveResult = true) : IReservationRepository
+    {
+        public List<Reservation> SavedReservations { get; } = [];
+        
+        public bool TrySave(Reservation reservation)
+        {
+            SavedReservations.Add(reservation);
+            return trySaveResult;
+        }
+    }
+
+    private sealed class Spy : IConfirmationSender
+    {
+        private readonly List<Reservation> _sentReservations = [];
+        public IReadOnlyList<Reservation> SentReservations => _sentReservations;
+
+        public void Send(Reservation reservation) => _sentReservations.Add(reservation);
+    }
+    
+    //> ------------------------- <//
+    //>        MAIN TESTS         <//
+    //> ------------------------- <//
+    
     // Entfernt Skip jeweils erst, wenn ihr den Test implementiert habt.
     // Die Beispiele für Stub, Spy und Moq stehen in TestDoubleExamples.cs.
 
@@ -12,9 +55,9 @@ public sealed class ReservationServiceTests
     {
         // Arrange: Stub mit 3 freien Plätzen, Repository mit erfolgreichem Speichern,
         //          eigener Sender-Spy und ReservationService.
-        var availability = new StubFixedSeatAvailability("TEST-1", 3);
-        var repo = new RepositoryRecordingReservation(true);
-        var sender = new SpyRecordingConfirmationSender();
+        var availability = new Stub("TEST-1", 3);
+        var repo = new Repository(true);
+        var sender = new Spy();
         var service = new ReservationService(availability, repo, sender);
         
         // Act:     2 Plätze reservieren.
@@ -30,9 +73,9 @@ public sealed class ReservationServiceTests
     public void Reserve_WithTooFewSeats_DoesNotSaveOrSend()
     {
         // Arrange: Stub mit 1 freiem Platz und Doubles für Repository und Sender.
-        var availability = new StubFixedSeatAvailability("TEST-2", 1);
-        var repo = new RepositoryRecordingReservation();
-        var sender = new SpyRecordingConfirmationSender();
+        var availability = new Stub("TEST-2", 1);
+        var repo = new Repository();
+        var sender = new Spy();
         var service = new ReservationService(availability, repo, sender);
         
         // Act:     2 Plätze reservieren.
@@ -48,9 +91,9 @@ public sealed class ReservationServiceTests
     public void Reserve_WithExactlyEnoughSeats_Succeeds()
     {
         // Arrange: Stub mit genau 2 freien Plätzen.
-        var availability = new StubFixedSeatAvailability("TEST-3", 2);
-        var repo = new RepositoryRecordingReservation();
-        var sender = new SpyRecordingConfirmationSender();
+        var availability = new Stub("TEST-3", 2);
+        var repo = new Repository();
+        var sender = new Spy();
         var service = new ReservationService(availability, repo, sender);
         
         // Act:     2 Plätze reservieren.
@@ -66,9 +109,9 @@ public sealed class ReservationServiceTests
     public void Reserve_WithZeroSeats_ThrowsBeforeCallingDependencies()
     {
         // Arrange: Doubles, deren Aufrufe sich prüfen lassen.
-        var availability = new StubFixedSeatAvailability("TEST-4", 3);
-        var repo = new RepositoryRecordingReservation();
-        var sender = new SpyRecordingConfirmationSender();
+        var availability = new Stub("TEST-4", 3);
+        var repo = new Repository();
+        var sender = new Spy();
         var service = new ReservationService(availability, repo, sender);
         
         // Act:     0 Plätze reservieren.
@@ -84,9 +127,9 @@ public sealed class ReservationServiceTests
     public void Reserve_WithNegativeSeats_ThrowsBeforeCallingDependencies()
     {
         // Arrange: Doubles, deren Aufrufe sich prüfen lassen.
-        var availability = new StubFixedSeatAvailability("TEST-5", 3);
-        var repo = new RepositoryRecordingReservation();
-        var sender = new SpyRecordingConfirmationSender();
+        var availability = new Stub("TEST-5", 3);
+        var repo = new Repository();
+        var sender = new Spy();
         var service = new ReservationService(availability, repo, sender);
         
         // Act:     -1 Plätze reservieren.
@@ -102,9 +145,9 @@ public sealed class ReservationServiceTests
     public void Reserve_WithEmptyEventCode_ThrowsBeforeCallingDependencies()
     {
         // Arrange: Doubles, deren Aufrufe sich prüfen lassen.
-        var availability = new StubFixedSeatAvailability("TEST-6", 3);
-        var repo = new RepositoryRecordingReservation();
-        var sender = new SpyRecordingConfirmationSender();
+        var availability = new Stub("TEST-6", 3);
+        var repo = new Repository();
+        var sender = new Spy();
         var service = new ReservationService(availability, repo, sender);
         
         // Act:     Mit leerem Veranstaltungscode reservieren.
@@ -138,9 +181,9 @@ public sealed class ReservationServiceTests
     public void Reserve_WhenSavingFails_DoesNotSendConfirmation()
     {
         // Arrange: Stub mit genügend Plätzen, Repository liefert false, eigener Spy.
-        var availability = new StubFixedSeatAvailability("TEST-8", 3);
-        var repo = new RepositoryRecordingReservation(false);
-        var sender = new SpyRecordingConfirmationSender();
+        var availability = new Stub("TEST-8", 3);
+        var repo = new Repository(false);
+        var sender = new Spy();
         var service = new ReservationService(availability, repo, sender);
         
         // Act:     Reservierung versuchen.
@@ -155,9 +198,9 @@ public sealed class ReservationServiceTests
     public void Reserve_WithTooFewSeats_DoesNotCallRepository()
     {
         // Arrange: Stub mit zu wenigen Plätzen und Mock<IReservationRepository>.
-        var availability = new StubFixedSeatAvailability("TEST-9", 1);
+        var availability = new Stub("TEST-9", 1);
         var repo = new Mock<IReservationRepository>();
-        var sender = new SpyRecordingConfirmationSender();
+        var sender = new Spy();
         var service = new ReservationService(availability, repo.Object, sender);
         
         // Act:     Reservierung versuchen.
@@ -169,51 +212,27 @@ public sealed class ReservationServiceTests
         Assert.Empty(sender.SentReservations);
     }
 
-    [Fact(Skip = "Fortgeschrittene: ReserveBatch zuerst implementieren")]
+    [Fact]
     public void ReserveBatch_WhenCombinedSeatsExceedCapacity_DoesNotSaveOrSend()
     {
         // Arrange: Zwei Reservierungen für dieselbe Veranstaltung, die einzeln passen.
+        var availability = new Stub("TEST-10", 5);
+        var repo = new Repository();
+        var sender = new Spy();
+        var service = new ReservationService(availability, repo, sender);
+        
+        var reservations = new List<Reservation>
+        {
+            new Reservation("user@ex.com", "TEST-10", 3),
+            new Reservation("user2@ex.com", "TEST-10", 3)
+        };
+        
         // Act:     Nach Implementierung des Batch-Verfahrens beide zusammen reservieren.
+        var result = service.ReserveBatch(reservations);
+        
         // Assert:  Ergebnis ist false; kein Batch-Speichern und keine Bestätigung.
-        throw new NotImplementedException();
-    }
-    
-    //> ------------------------- <//
-    //>     HELPER FUNCTIONS      <//
-    //> ------------------------- <//
-
-    private sealed class StubFixedSeatAvailability(IReadOnlyDictionary<string, int> availableSeatsByEventCode) : ISeatAvailability
-    {
-        public StubFixedSeatAvailability(string eventCode, int availableSeats)
-        : this( new Dictionary<string, int> { [eventCode] = availableSeats } )
-        {
-        }
-        
-        public int CallCount { get; private set; }
-
-        public int GetAvailableSeats(string eventCode)
-        {
-            CallCount++;
-            return availableSeatsByEventCode.GetValueOrDefault(eventCode, 0);
-        }
-    }
-
-    private sealed class RepositoryRecordingReservation(bool trySaveResult = true) : IReservationRepository
-    {
-        public List<Reservation> SavedReservations { get; } = [];
-        
-        public bool TrySave(Reservation reservation)
-        {
-            SavedReservations.Add(reservation);
-            return trySaveResult;
-        }
-    }
-
-    private sealed class SpyRecordingConfirmationSender : IConfirmationSender
-    {
-        private readonly List<Reservation> _sentReservations = [];
-        public IReadOnlyList<Reservation> SentReservations => _sentReservations;
-
-        public void Send(Reservation reservation) => _sentReservations.Add(reservation);
+        Assert.False(result);
+        Assert.Empty(repo.SavedReservations);
+        Assert.Empty(sender.SentReservations);
     }
 }
