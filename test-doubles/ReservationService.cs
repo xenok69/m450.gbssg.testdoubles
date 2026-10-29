@@ -39,20 +39,7 @@ public sealed class ReservationService
 
     public bool Reserve(string customerEmail, string eventCode, int seatCount)
     {
-        if (string.IsNullOrWhiteSpace(customerEmail))
-        {
-            throw new ArgumentException("Eine E-Mail-Adresse ist erforderlich.", nameof(customerEmail));
-        }
-
-        if (string.IsNullOrWhiteSpace(eventCode))
-        {
-            throw new ArgumentException("Ein Veranstaltungscode ist erforderlich.", nameof(eventCode));
-        }
-
-        if (seatCount <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(seatCount));
-        }
+        Validate(customerEmail, eventCode, seatCount);
 
         if (_availability.GetAvailableSeats(eventCode) < seatCount)
         {
@@ -71,17 +58,56 @@ public sealed class ReservationService
     
     public bool ReserveBatch(IReadOnlyList<Reservation> entries)
     {
-        List<bool> allResults = new();
-        
+        // validate
+        ArgumentNullException.ThrowIfNull(entries);
         foreach (var entry in entries)
         {
-            allResults.Add(Reserve(entry.CustomerEmail, entry.EventCode, entry.SeatCount));
+            Validate(entry.CustomerEmail, entry.EventCode, entry.SeatCount);
         }
-        
-        ArgumentNullException.ThrowIfNull(entries);
-        ArgumentNullException.ThrowIfNull(allResults);
-        
-        bool result = allResults.All(r => r);
-        return result;
+
+        // filter valid events
+        var hasEnoughSeats = entries
+            .GroupBy(e => e.EventCode)
+            .All(g => _availability.GetAvailableSeats(g.Key) >= g.Sum(e => e.SeatCount));
+
+        if (!hasEnoughSeats)
+        {
+            return false;
+        }
+
+        // try saving
+        foreach (var entry in entries)
+        {
+            if (!_repository.TrySave(entry))
+            {
+                return false;
+            }
+        }
+
+        // send
+        foreach (var entry in entries)
+        {
+            _sender.Send(entry);
+        }
+
+        return true;
+    }
+
+    private static void Validate(string customerEmail, string eventCode, int seatCount)
+    {
+        if (string.IsNullOrWhiteSpace(customerEmail))
+        {
+            throw new ArgumentException("Eine E-Mail-Adresse ist erforderlich.", nameof(customerEmail));
+        }
+
+        if (string.IsNullOrWhiteSpace(eventCode))
+        {
+            throw new ArgumentException("Ein Veranstaltungscode ist erforderlich.", nameof(eventCode));
+        }
+
+        if (seatCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(seatCount));
+        }
     }
 }
